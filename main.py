@@ -328,6 +328,9 @@ def generate_data(dataset, p=p, n=n):
         b = np.random.randint(1,4)
         c = np.random.randint(1,4)
 
+        if number_of_trees_analysis:
+            a = b = c = 1
+
         y = a*data[0] + b*data[1] + c*data[2] + 3*np.sin(1*data[3]) + 3*np.exp(-data[5]**2) + data[5]**(1/2) + erro 
 
         y = y.dropna()
@@ -525,30 +528,31 @@ if number_of_trees_analysis:
 
     print('\nStarting NUMBER OF TREES analysis with dataset:', dataset, '\n')
 
-    data, y, sum_lin_coefs = generate_data(dataset)
-    scaler = StandardScaler()
-    X = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
-
-    # train/test split:
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
-
-    #https://rpy2.github.io/doc/v3.0.x/html/generated_rst/pandas.html
-    with localconverter(robjects.default_converter + pandas2ri.converter):
-        X_train_r = robjects.conversion.py2rpy(X_train)
-        y_train_r = robjects.conversion.py2rpy(y_train)
-        X_test_r = robjects.conversion.py2rpy(X_test)
-        y_test_r = robjects.conversion.py2rpy(y_test)
-
     number_of_trees_inicial = 75
     number_of_trees_final = 500
     step = 25
     primeiras = [1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,35,40,50]
 
     for qty_of_trees_analysis in tqdm(primeiras + list(range(number_of_trees_inicial, number_of_trees_final, step)) + [number_of_trees_final]):
-        
+
         print('qty of trees:', qty_of_trees_analysis)
 
         for _ in tqdm(range(repetitions)):
+
+            data, y, sum_lin_coefs = generate_data(dataset)
+            scaler = StandardScaler()
+            X = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
+
+            # train/test split:
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
+
+            #https://rpy2.github.io/doc/v3.0.x/html/generated_rst/pandas.html
+            with localconverter(robjects.default_converter + pandas2ri.converter):
+                X_train_r = robjects.conversion.py2rpy(X_train)
+                y_train_r = robjects.conversion.py2rpy(y_train)
+                X_test_r = robjects.conversion.py2rpy(X_test)
+                y_test_r = robjects.conversion.py2rpy(y_test)
+
 
             title = 'adaLASSO'
             if title in models_to_train:
@@ -569,10 +573,6 @@ if number_of_trees_analysis:
                 residuo = y_train - preds_train
                 residuos = pd.Series(residuo) # usado para outros modelos daqui pra frente.
                 end_model = timer()
-                if dataset == 'exemplo b':
-                    resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
-                else:
-                    resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
 
             title = 'adaLASSO + STR RF'
             if title in models_to_train:
@@ -595,16 +595,15 @@ if number_of_trees_analysis:
                 relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
                 end_model = timer()
                 if dataset == 'exemplo b':
-                    resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+                    resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, qty_of_trees_analysis])
                 else:
                     resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
 
         # mostra resultados parciais:
-        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'number of trees','run time'])
+        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'sum lin coefs', 'number of trees'])
+        resultados_df = resultados_df[resultados_df['modelo'] == 'adaLASSO + STR RF']
         resultados_df = resultados_df[[col for col in resultados_df.columns if col != 'modelo']]
         resultados_df = resultados_df.groupby('number of trees').mean()
-        resultados_df = resultados_df[resultados_df['number of trees'] < 400]
-        resultados_df['number of trees'] = resultados_df.index
         print(resultados_df)
 
 else:
@@ -823,16 +822,9 @@ else:
 
 if number_of_trees_analysis:
 
-    # grava resultados:
-    data_path = '/home/alega/dissertacao/results/'
-    with open(data_path + 'qty_of_trees.pkl', 'wb') as handle:
-        pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'number of trees','run time'])
-    resultados_df.to_csv(data_path + 'qty_of_trees.csv')
+    resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error','run time', 'sum lin coefs', 'number of trees'])
     resultados_df = resultados_df[[col for col in resultados_df.columns if col != 'modelo']]
     resultados_df = resultados_df.groupby('number of trees').mean()
-    resultados_df = resultados_df[resultados_df['number of trees'] < 400]
 
     matplotlib.style.use('seaborn')
     matplotlib.rcParams['mathtext.fontset'] = 'custom'
@@ -895,7 +887,6 @@ elif dataset == 'exemplo b':
     resultados_df = resultados_df[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
     print(resultados_df.round(4).to_latex())
 
-
 else:
 
     resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time'])
@@ -922,13 +913,20 @@ else:
     resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
     print(resultados_to_print.round(4).to_latex())
 
-# gravar resultados
+# grava resultados:
 data_path = '/home/alega/dissertacao/results/'
-with open(data_path + dataset + '.pkl', 'wb') as handle:
-    pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
+with open(data_path + 'qty_of_tress' + '.pkl', 'wb') as handle:
+    if number_of_trees_analysis:
+        pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-path = '/home/alega/dissertacao/results/' + dataset + '.csv'
-resultados_df.to_csv(path)
+if number_of_trees_analysis:
+    path = '/home/alega/dissertacao/results/' + 'qty_of_trees' + '.csv'
+    resultados_df.to_csv(path)
+else:
+    path = '/home/alega/dissertacao/results/' + dataset + '.csv'
+    resultados_df.to_csv(path)
 
 ##############
 # FIM DAS SIMULACOES
