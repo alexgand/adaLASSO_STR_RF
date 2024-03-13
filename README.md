@@ -1,2 +1,1 @@
-## Code used in the "Combining LASSO-Type Methods with a Smooth Transition Random Forest" paper from Gandini and Ziegelmann, 2024.
-
+## This is the code needed to run the simulations described in the paper titled "Combining LASSO-Type Methods with a Smooth Transition Random Forest" by Gandini and Ziegelman, submitted to the AODS (Annals of Data Science) journal.

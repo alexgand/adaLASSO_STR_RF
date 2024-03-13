@@ -1,20 +1,19 @@
 ################
-# This is the code needed to run the simulations on the
-# "Combining LASSO-Type Methods with a Smooth Transition Random Forest" paper from Gandini and Ziegelman, 2022.
+# This is the code needed to run the simulations described in the paper titled
+# "Combining LASSO-Type Methods with a Smooth Transition Random Forest" by Gandini and Ziegelman,
+# submitted to the AODS (Annals of Data Science) journal.
 ################
 
 ################
 # SIMULACOES:
 ################
 
-# https://stackoverflow.com/questions/24152160/converting-an-rpy2-listvector-to-a-python-dictionary
-from typing import final
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from rpy2.robjects.vectors import DataFrame, FloatVector, IntVector, StrVector, ListVector, Matrix, FloatMatrix
 import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri# Defining the R script and loading the instance in Python
+from rpy2.robjects import pandas2ri
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
 from sklearn.preprocessing import StandardScaler
@@ -26,16 +25,19 @@ from sklearn.svm import SVR
 from tqdm import tqdm
 # tem que instalar previamente o glmnet com sudo apt-get install -y r-cran-glmnet
 from sklearn import datasets
-from sklearn.datasets import make_regression
 from timeit import default_timer as timer
 from datetime import timedelta
 from collections import OrderedDict
 import matplotlib
-from matplotlib import cm
 from multiprocessing import Pool, cpu_count
-import pickle
 
-%matplotlib
+# suppress pandas2ri warnings:
+import warnings
+from rpy2.rinterface import RRuntimeWarning
+# Filter out RRuntimeWarning
+warnings.filterwarnings("ignore", category=RRuntimeWarning)
+# Suppress specific warning from pandas2ri
+warnings.filterwarnings("ignore", message="DataFrame contains duplicated elements in the index")
 
 def STR_tree_parallel(qty_of_trees):
 
@@ -70,8 +72,7 @@ def STR_tree_parallel(qty_of_trees):
 # download de datasets do kaggle:
 # import kaggle
 # https://stackoverflow.com/questions/49386920/download-kaggle-dataset-by-using-python
-# kaggle.api.dataset_download_files('shivam2503/diamonds', path='/home/alega/dissertacao/data/', unzip=True)
-# kaggle.api.dataset_download_files('pcbreviglieri/smart-grid-stability', path='/home/alega/dissertacao/data/', unzip=True)
+# kaggle.api.dataset_download_files('shivam2503/diamonds', path='/path_to_the_file/', unzip=True)
 
 # suppress displaying divide by zero error:
 # https://stackoverflow.com/questions/31688667/how-to-suppress-the-error-message-when-dividing-0-by-0-using-np-divide-alongsid
@@ -98,10 +99,11 @@ def recurse_r_tree(data):
                            'to add support for this type, just add it to the imports '
                            'and to the appropriate type list above'.format(type(data)))
         else:
-            return data
+            return data  # We reached the end of recursion
 
 ################
 # adalasso no R:
+################
 
 base = importr('base')
 stats = importr('stats')
@@ -115,11 +117,11 @@ def adalasso_from_r(X, y, ridge_1st_step=False, intercept=True):
         y_r = robjects.conversion.py2rpy(y)
 
     # 1st step: 
+    # alpha=1 is lasso, alpha=0 is ridge
     if ridge_1st_step:
         lasso = glmnet.cv_glmnet(x=base.as_matrix(X_r), y=base.as_matrix(y_r), alpha=0, intercept=intercept)
     else: # se nao, faz lasso tambem no 1st step:
         lasso = glmnet.cv_glmnet(x=base.as_matrix(X_r), y=base.as_matrix(y_r), alpha=1, intercept=intercept)
-    # alpha=1 is lasso, alpha=0 is ridge
     coefs = stats.coef(lasso)
     posicoes = recurse_r_tree(coefs.slots['i'])
     posicoes = list(posicoes)
@@ -147,6 +149,7 @@ def adalasso_from_r(X, y, ridge_1st_step=False, intercept=True):
     for pos in posicoes:
         final_coefs[pos] = coefs[posicoes.index(pos)]
 
+    #retira o 1o item se nao for usar o intercepto:
     if intercept == False:
         final_coefs = final_coefs[1:]
     
@@ -154,48 +157,55 @@ def adalasso_from_r(X, y, ridge_1st_step=False, intercept=True):
 
     return final_coefs
 
+def calculate_r_squared(y_true, y_pred):
+    """
+    Calculate R-squared (coefficient of determination) value.
+    """
+    y_mean = np.mean(y_true)
+    ss_total = np.sum((y_true - y_mean) ** 2)
+    ss_residual = np.sum((y_true - y_pred) ** 2)
+    r_squared = 1 - (ss_residual / ss_total)
+    return r_squared
+
+def calculate_aic(n_samples, n_features, rss):
+    """
+    Calculate Akaike Information Criterion (AIC) value.
+    """
+    aic = n_samples * np.log(rss / n_samples) + 2 * n_features
+    return aic
+
+def calculate_bic(n_samples, n_features, rss):
+    """
+    Calculate Bayesian Information Criterion (BIC) value.
+    """
+    bic = n_samples * np.log(rss / n_samples) + np.log(n_samples) * n_features
+    return bic
+
 #####################
 # ESCOLHA DO DATASET:
 #####################
 
-# COM variacoes nos termos lineares e variaveis irrelevantes:
-
-dataset = 'exemplo b'
+# COM variacoes nos termos lineares:
+# dataset = 'example DGP'
 # dataset = 'Friedman #1'
 
-# SEM termos lineares e somente com variaveis relevantes:
-
-# dataset = 'Friedman #2'
-# dataset = 'Friedman #3'
-# dataset = 'Fan & Zhang #1'
-# dataset = 'Fan & Zhang #2'
-# dataset = 'Cherkassk #1'
-# dataset = 'Cherkassk #2'
-# dataset = 'Cherkassk #3'
-
 # datasets reais:
-
-# dataset = 'bodyfat'
-# dataset = 'liver-disorders'
 # dataset = 'abalone'
-# dataset = 'boston'
-# dataset = 'debutanizer'
+# dataset = 'ailerons'
+# dataset = 'bodyfat'
+dataset = 'debutanizer'
 # dataset = 'diabetes'
 # dataset = 'diamonds'
 # dataset = 'sulfur'
-# dataset = 'ailerons'
-# dataset = 'california'
 
-datasets_simulados = ['exemplo b', 'Friedman #1', 'Friedman #2', 'Friedman #3', 'Fan & Zhang #1', 'Fan & Zhang #2', 'Cherkassk #1', 'Cherkassk #2', 'Cherkassk #3']
-
-real_datasets = ['abalone', 'bodyfat', 'boston', 'california', 'debutanizer', 'ailerons', 'diabetes', 'liver-disorders', 'sulfur', 'diamonds']
-large_datasets = ['ailerons', 'diamonds', 'sulfur', 'california']
+datasets_simulados = ['example DGP', 'Friedman #1']
+real_datasets = ['abalone', 'ailerons', 'bodyfat', 'debutanizer', 'diabetes', 'diamonds', 'sulfur']
 
 #############
 # PARAMETROS:
 #############
 
-intercepto_lasso = True
+intercepto_lasso = True # better predictions with a intercept.
 
 # max depth of a STR tree:
 d_max = 4
@@ -204,61 +214,44 @@ d_max = 4
 p = 50
 
 # number of samples:
-# n = 50
-n = 200
+n = 50
+# n = 200
 # n = 1000
-# n = 5000
 
 # number of trees in the STR RANDOM FOREST and BooST models:
 number_of_trees = 200
 
-# number of repetitions of: generating data (for syntetic datasets) and training.
+# number of repetitions of generating data (for syntetic datasets) and training.
 repetitions = 500
 
 # all of them:
 models_to_train = ['adaLASSO', 'adaLASSO + STR RF', 'adaLASSO + RF', 'BooST', 'RF', 'STR RF', 'SVR', 'OLS']
 
 # analysis of predictive performance by the number of trees in the STR RANDOM FOREST:
-number_of_trees_analysis = False
 # number_of_trees_analysis = True
-
+number_of_trees_analysis = False
 if number_of_trees_analysis:
-    dataset = 'exemplo b'
+    repetitions = 500
+    n = 1000
+    p = 10
+    dataset = 'example DGP'
 
 ##########
 
 # medir tempo: https://stackoverflow.com/questions/7370801/how-to-measure-elapsed-time-in-python
 start = timer()
 
-np.random.seed(0)
+# np.random.seed(0)
 
 def generate_data(dataset, p=p, n=n):
 
     flag_return_coefs = False
 
-    if dataset == 'boston':
-
-        boston = datasets.load_boston()
-        X = pd.DataFrame(boston['data'], columns=boston['feature_names'])
-        y = boston['target']
-        y = pd.Series(y)
-
-    elif dataset == 'diabetes':
-
+    if dataset == 'diabetes':
         diabetes = datasets.load_diabetes()
         X = pd.DataFrame(diabetes['data'], columns=diabetes['feature_names'])
         y = diabetes['target']
         y = pd.Series(y)
-
-    elif dataset == 'california':
-        X, y = datasets.fetch_california_housing(return_X_y=True)
-        X = pd.DataFrame(X)
-        y = pd.Series(y)
-
-    elif dataset == 'liver-disorders':
-        data = datasets.fetch_openml(name='liver-disorders')
-        X = data['data']
-        y = data['target']
 
     elif dataset == 'ailerons':
         data = datasets.fetch_openml(name='ailerons')
@@ -282,7 +275,7 @@ def generate_data(dataset, p=p, n=n):
 
     elif dataset == 'diamonds':
         # https://www.kaggle.com/datasets/shivam2503/diamonds
-        data = pd.read_csv('/home/alega/dissertacao/data/diamonds.csv')
+        data = pd.read_csv('/path_to_the_file/diamonds.csv')
         y = data['price']
         X = data[['carat','depth','table','x','y','z']]
 
@@ -290,12 +283,12 @@ def generate_data(dataset, p=p, n=n):
         # https://archive.ics.uci.edu/ml/machine-learning-databases/abalone/abalone.data
         # https://archive.ics.uci.edu/ml/datasets/abalone
         cols = ['Sex', 'Length', 'Diameter', 'Height', 'Whole weight', 'Shucked weight', 'Viscera weight', 'Shell weight', 'Rings']
-        data = pd.read_csv('/home/alega/dissertacao/data/abalone.data', names=cols)
+        data = pd.read_csv('/path_to_the_file/abalone.data', names=cols)
         y = data['Rings']
         data = data[[col for col in data if ((col != 'Sex') and (col != 'Rings') )]]
         X = data.copy()
 
-    elif dataset == 'exemplo b':
+    elif dataset == 'example DGP':
 
         media_padrao = np.pi/2
         correlacao_padrao = 0.85
@@ -316,13 +309,21 @@ def generate_data(dataset, p=p, n=n):
         data = np.random.multivariate_normal(mean, cov, size=n, check_valid='warn', tol=1e-8)
         data = pd.DataFrame(data)
 
+        # forca nao ter valor negativo (duas rodadas), sorteia de novo o particular valor negativo:
+        data = pd.DataFrame(np.where(data < 0, np.random.normal(loc=media_padrao, scale=std_dev_padrao), data))
+        data = pd.DataFrame(np.where(data < 0, np.random.normal(loc=media_padrao, scale=std_dev_padrao), data))
+
+        data = pd.DataFrame(np.where(data > np.pi, np.random.normal(loc=media_padrao, scale=std_dev_padrao), data))
+        data = pd.DataFrame(np.where(data > np.pi, np.random.normal(loc=media_padrao, scale=std_dev_padrao), data))
+
+        # generate response:
         erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
 
-        a = 2
-        b = 2
-        c = 2
+        a = 1.5
+        b = 1.5
+        c = 1.5
 
-        print('exemplo b coefs, a:', a, 'b:', b, 'c:', c)
+        print('example DGP coefs, a:', a, 'b:', b, 'c:', c)
 
         y = a*data[0] + b*data[1] + c*data[2] + 3*np.sin(1*data[3]) + 3*np.exp(-data[5]**2) + data[5]**(1/2) + erro 
 
@@ -336,89 +337,12 @@ def generate_data(dataset, p=p, n=n):
 
         sum_lin_coefs = a+b+c
 
-    elif dataset == 'Fan & Zhang #1': 
-        
-        p = 3 - 1 # uma uniforme, o resto normais
-
-        media_padrao = 0
-        correlacao_padrao = 2**(-1/2)
-        std_dev_padrao = 1
-        media_do_erro = 0
-        std_dev_do_erro = 1
-
-        mean = np.array([media_padrao] * p)
-
-        corr = np.identity(n=p)
-        corr = np.where(corr == 1, corr, correlacao_padrao) # matrix
-        corr = pd.DataFrame(corr)
-        
-        std_devs= pd.Series(np.array([std_dev_padrao] * p))
-        # https://stackoverflow.com/questions/30251737/how-do-i-convert-list-of-correlations-to-covariance-matrix
-        cov = corr.multiply(std_devs.multiply(std_devs.T.values))
-
-        data = np.random.multivariate_normal(mean, cov, size=n, check_valid='warn', tol=1e-8)
-        data = pd.DataFrame(data)
-
-        x1 = pd.Series(np.random.uniform(low=0.0, high=1.0, size=n))
-        x2 = data[0]
-        x3 = data[1]
-
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-
-        y = (np.sin(60*x1))*x2 + 4*x1*(1 - x1)*x3 + erro
-
-        cols = list(data.columns)
-        data['u'] = x1
-        data = data[['u'] + cols]
-        data.columns=range(len(data.columns))
-        X = data
-
-    elif dataset == 'Fan & Zhang #2': 
-        
-        p = 3 - 1 # uma uniforme, o resto normais
-
-        media_padrao = 0
-        correlacao_padrao = 2**(-1/2)
-        std_dev_padrao = 1
-        media_do_erro = 0
-        std_dev_do_erro = 1
-
-        mean = np.array([media_padrao] * p)
-
-        corr = np.identity(n=p)
-        corr = np.where(corr == 1, corr, correlacao_padrao) # matrix
-        corr = pd.DataFrame(corr)
-        
-        std_devs= pd.Series(np.array([std_dev_padrao] * p))
-        # https://stackoverflow.com/questions/30251737/how-do-i-convert-list-of-correlations-to-covariance-matrix
-        cov = corr.multiply(std_devs.multiply(std_devs.T.values))
-
-        data = np.random.multivariate_normal(mean, cov, size=n, check_valid='warn', tol=1e-8)
-        data = pd.DataFrame(data)
-
-        x1 = pd.Series(np.random.uniform(low=0.0, high=1.0, size=n))
-        x2 = data[0]
-        x3 = data[1]
-
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-
-        y = (np.sin(8*np.pi*(x1-0.5)))*x2 + ( np.exp(-((4*x1 - 1)**2) ) + np.exp(-((4*x1 - 3)**2) ) - 1.4 ) * x3 + erro
-
-        cols = list(data.columns)
-        data['u'] = x1
-        data = data[['u'] + cols]
-        data.columns=range(len(data.columns))
-        X = data
-
     elif dataset == 'Friedman #1': 
 
-        # a, b = 1,1
-        # a, b = 5,1
-        # a, b = 5,5
-        # a, b = 10,5 # original
+        a, b = 10,5 # original
         # a, b = 15,10
         # a, b = 25,20
-        a, b = 35,30
+        # a, b = 35,30
         # a, b = 45,40
         # a, b = 55,50
 
@@ -432,111 +356,9 @@ def generate_data(dataset, p=p, n=n):
 
         print('linear coefs:', a, b)
 
+        # generate response:
         erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
         y = a*data[0] + b*data[1] + 10*np.sin(np.pi*data[2]*data[3]) + 20*((data[4] - 0.5)**2) + erro
-
-        X = data
-
-    elif dataset == 'Cherkassk #1': 
-
-        p = 4
-        media_do_erro = 0
-
-        data = pd.DataFrame()
-        for col in range(p):
-            data[col] = np.random.uniform(low=-0.25, high=0.25, size=n)
-
-        y = np.exp( 2*data[0]*np.sin(np.pi*data[3]) ) + np.sin(data[1]*data[2])
-        var_true_function = y.var()
-        var_erro = var_true_function / 10 # 90% true function, 10%  erro.
-        std_dev_do_erro = var_erro**(1/2)
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-        y = y + erro
-        
-        X = data
-
-    elif dataset == 'Cherkassk #2': 
-
-        p = 4
-        media_do_erro = 0
-
-        data = pd.DataFrame()
-        for col in range(p):
-            data[col] = np.random.uniform(low=-1.0, high=1.0, size=n)
-
-        y = 4*(data[0] - 0.5)*(data[3] - 0.5)*np.sin(2*np.pi*(((data[1]**2)*(data[2]**2))**(1/2)))
-        var_true_function = y.var()
-        var_erro = var_true_function / 10 # 90% true function, 10%  erro.
-        std_dev_do_erro = var_erro**(1/2)
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-        y = y + erro
-        
-        X = data
-
-    elif dataset == 'Cherkassk #3': 
-
-        p = 4
-        media_do_erro = 0
-
-        data = pd.DataFrame()
-        for col in range(p):
-            data[col] = np.random.uniform(low=-1.0, high=1.0, size=n)
-
-        y = np.sin( np.exp(2*data[0]*np.sin(np.pi*data[3]) )   *  np.exp(2*data[1]*np.sin(np.pi*data[2])) )
-        var_true_function = y.var()
-        var_erro = var_true_function / 10 # 90% true function, 10%  erro.
-        std_dev_do_erro = var_erro**(1/2)
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-        y = y + erro
-        
-        X = data
-
-    elif dataset == 'Friedman #2':
-
-        p = p
-        media_do_erro = 0
-
-        data = pd.DataFrame()
-
-        data[0] = np.random.uniform(low=0.0, high=100.0, size=n)
-        data[1] = np.random.uniform(low=(20*2*np.pi), high=(280*2*np.pi), size=n)
-        data[2] = np.random.uniform(low=(0.0), high=(1.0), size=n)
-        data[3] = np.random.uniform(low=(1.0), high=(11.0), size=n)
-        
-        media_padrao = 0
-        std_dev_padrao = 1
-
-        y = (data[0]**2 + (data[1]*data[2] - (1/(data[1]*data[3])))**2 )**(1/2)
-        var_true_function = y.var()
-        var_erro = var_true_function / 10 # 90% true function, 10%  erro.
-        std_dev_do_erro = var_erro**(1/2)
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-        y = y + erro
-
-        X = data
-
-    elif dataset == 'Friedman #3': 
-
-        p = p
-        media_do_erro = 0
-
-        data = pd.DataFrame()
-
-        data[0] = np.random.uniform(low=0.0, high=100.0, size=n)
-        data[1] = np.random.uniform(low=(20*2*np.pi), high=(280*2*np.pi), size=n)
-        data[2] = np.random.uniform(low=(0.0), high=(1.0), size=n)
-        data[3] = np.random.uniform(low=(1.0), high=(11.0), size=n)
-
-
-        media_padrao = 0
-        std_dev_padrao = 1
-        
-        y = np.arctan( ((data[1]*data[2]) - (1/(data[1]*data[3]) )) /data[0] )
-        var_true_function = y.var()
-        var_erro = var_true_function / 10 # 90% true function, 10%  erro.
-        std_dev_do_erro = var_erro**(1/2)
-        erro = np.random.normal(loc=media_do_erro, scale=std_dev_do_erro, size=n)
-        y = y + erro
 
         X = data
 
@@ -547,12 +369,12 @@ def generate_data(dataset, p=p, n=n):
 
 # r source file:
 r = robjects.r
-r['source']('/home/alega/dissertacao/smooth_tree.r')# Loading the function we have defined in R.
+r['source']('/path_to_the_file/smooth_tree.r')
 # r source functions:
-grow_tree_f_r = robjects.globalenv['grow_tree'] # Reading and processing data
-predict_smooth_tree_f_r = robjects.globalenv['predict.SmoothTree'] # Reading and processing data
-boost_f_r = robjects.globalenv['BooST'] # Reading and processing data
-predict_boost_f_r = robjects.globalenv['predict.BooST'] # Reading and processing data
+grow_tree_f_r = robjects.globalenv['grow_tree']
+predict_smooth_tree_f_r = robjects.globalenv['predict.SmoothTree']
+boost_f_r = robjects.globalenv['BooST']
+predict_boost_f_r = robjects.globalenv['predict.BooST']
 
 print('')
 print('Nome do dataset:', dataset)
@@ -571,7 +393,6 @@ adalasso_stats = []
 
 print('Training models:')
 
-# analise da quantidade de arvores no ensemble:
 if number_of_trees_analysis:
 
     print('\nStarting NUMBER OF TREES analysis with dataset:', dataset, '\n')
@@ -612,6 +433,12 @@ if number_of_trees_analysis:
                 preds = preds_adalasso
                 MSE = mean_squared_error(y_true=y_test,y_pred=preds)
                 relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+                r2 = calculate_r_squared(y_test, preds)
+                n_samples = X_test_new.shape[0]
+                n_features = X_test_new.shape[1]
+                rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+                aic = calculate_aic(n_samples, n_features, rss)
+                bic = calculate_bic(n_samples, n_features, rss)
                 # residuos do treinamento adalasso:
                 X_train_new = X_train.copy()
                 if intercepto_lasso == True:
@@ -630,7 +457,7 @@ if number_of_trees_analysis:
                 if qty_of_trees_analysis < int(cpu_count()-1):
                     qtd_CPUs = qty_of_trees_analysis
                 else:
-                    qtd_CPUs = int(cpu_count()-1)
+                    qtd_CPUs = int(cpu_count()/3)
                 pool = Pool(qtd_CPUs) # number of CPUs
                 #paralell processing:
                 results = pool.map(STR_tree_parallel, [1] * qty_of_trees_analysis)
@@ -638,11 +465,16 @@ if number_of_trees_analysis:
                 
                 preds = preds_adalasso + preds.values
                 final_preds_adalasso_plus_STR_random_forest = preds.copy() # para graficos
-                # final_MSE = mean_squared_error(y_true=y_test, y_pred=preds) # AQUI ESTAVA ERRADO
                 MSE = mean_squared_error(y_true=y_test, y_pred=preds) # AQUI ESTAVA ERRADO
                 relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+                r2 = calculate_r_squared(y_test, preds)
+                n_samples = X_test_new.shape[0]
+                n_features = X_test_new.shape[1]
+                rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+                aic = calculate_aic(n_samples, n_features, rss)
+                bic = calculate_bic(n_samples, n_features, rss)
                 end_model = timer()
-                if dataset == 'exemplo b':
+                if dataset == 'example DGP':
                     resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, qty_of_trees_analysis])
                 else:
                     resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
@@ -662,16 +494,20 @@ else:
         scaler = StandardScaler()
         X = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
 
-
     for _ in tqdm(range(repetitions)):
 
         # gera banco de dados sintetico a cada repeticao:
-        if dataset == 'exemplo b':
-            data, y, sum_lin_coefs = generate_data(dataset)
-        else:
-            data, y = generate_data(dataset)
-        scaler = StandardScaler()
-        X = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
+        if dataset not in real_datasets:
+            if dataset == 'example DGP':
+                data, y, sum_lin_coefs = generate_data(dataset)
+            elif dataset == 'Friedman #1':
+                y = pd.Series([-1,0,0])
+                while y.describe()['min'] <= 0.01: # forca a nao ter resposta negativa no # Friedman #1
+                    data, y = generate_data(dataset)
+            else:
+                data, y = generate_data(dataset)
+            scaler = StandardScaler()
+            X = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
 
         # train/test split:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33)
@@ -695,13 +531,7 @@ else:
 
             coefs = coefs_adalasso[1:] # retira intercepto p/ essa analise
 
-            if dataset == 'exemplo a':
-                # tem intercepto, ignora primeiro coef. ([qtd total de coefs diff de zero, qtd dos 6 primeiros coefs (variaveis usadas na resposta) diferentes de zero, qtd das 4 ultimas variaveis (nao usadas na resposta) diferentes de zero], qtd lin coefs certos, qtd non lin coefs certos)
-                adalasso_stats.append([np.sum(coefs_adalasso[1:] != 0), np.sum(coefs_adalasso[1] != 0), np.sum(coefs_adalasso[2] != 0), np.sum(coefs_adalasso[1] != 0), np.sum(coefs_adalasso[2] != 0),  False,  (coefs_adalasso[1:] != 0).all(),  np.sum(coefs_adalasso[1:] != 0)/(len(coefs_adalasso) - 1), np.sum(coefs_adalasso[1] != 0)/1, np.sum(coefs_adalasso[2] == 0)/1 , False  ] )
-                print('adaLASSO coefs non-zero:')
-                print(pd.Series([np.sum(coefs_adalasso[1:] != 0), np.sum(coefs_adalasso[1] != 0), np.sum(coefs_adalasso[2] != 0), np.sum(coefs_adalasso[1] != 0), np.sum(coefs_adalasso[2] != 0),  False,  (coefs_adalasso[1:] != 0).all(),  np.sum(coefs_adalasso[1:] != 0)/(len(coefs_adalasso) - 1), np.sum(coefs_adalasso[1] != 0)/1, np.sum(coefs_adalasso[2] == 0)/1 , False  ], index=['total', 'true', 'false', 'lin', 'non-lin', 'FVCI', 'TMI', 'FRVI', 'FRVI-lin', 'FRVI-non-lin', 'FIVE']))
-
-            elif dataset == 'exemplo b':
+            if dataset == 'example DGP':
                 qtd_variaveis_relevantes_total = 6
                 qtd_variaveis_relevantes_lineares = 3
                 qtd_variaveis_relevantes_nao_lineares = 3
@@ -711,21 +541,6 @@ else:
                 qtd_variaveis_relevantes_lineares = 2
                 qtd_variaveis_relevantes_nao_lineares = 3
 
-            elif (dataset == 'Friedman #2') or (dataset == 'Friedman #3'):
-                qtd_variaveis_relevantes_total = 4
-                qtd_variaveis_relevantes_lineares = 0
-                qtd_variaveis_relevantes_nao_lineares = 4
-
-            elif (dataset == 'Fan & Zhang #1') or (dataset == 'Fan & Zhang #2'):
-                qtd_variaveis_relevantes_total = 3
-                qtd_variaveis_relevantes_lineares = 0
-                qtd_variaveis_relevantes_nao_lineares = 3
-
-            elif (dataset == 'Cherkassk #1') or (dataset == 'Cherkassk #2') or (dataset == 'Cherkassk #3'):
-                qtd_variaveis_relevantes_total = 4
-                qtd_variaveis_relevantes_lineares = 0
-                qtd_variaveis_relevantes_nao_lineares = 4
-            
             if dataset in datasets_simulados:
 
                 adalasso_stats.append([ (np.sum(coefs[:qtd_variaveis_relevantes_total] != 0) + np.sum(coefs[qtd_variaveis_relevantes_total:] == 0))/len(coefs),  (coefs[:qtd_variaveis_relevantes_total] != 0).all(),  np.sum(coefs[:qtd_variaveis_relevantes_total] != 0)/qtd_variaveis_relevantes_total, np.sum(coefs[:qtd_variaveis_relevantes_lineares] != 0)/qtd_variaveis_relevantes_lineares, np.sum(coefs[qtd_variaveis_relevantes_lineares:qtd_variaveis_relevantes_lineares+qtd_variaveis_relevantes_nao_lineares] != 0)/qtd_variaveis_relevantes_nao_lineares , np.sum(coefs[qtd_variaveis_relevantes_total:] == 0)/(len(coefs) - qtd_variaveis_relevantes_total)  ] )
@@ -738,6 +553,18 @@ else:
             preds = preds_adalasso
             MSE = mean_squared_error(y_true=y_test,y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             # residuos do treinamento adalasso:
             X_train_new = X_train.copy()
             if intercepto_lasso == True:
@@ -746,10 +573,10 @@ else:
             residuo = y_train - preds_train
             residuos = pd.Series(residuo) # usado para outros modelos daqui pra frente.
             end_model = timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'STR RF'
         if title in models_to_train:
@@ -760,7 +587,7 @@ else:
             if number_of_trees < int(cpu_count()-1):
                 qtd_CPUs = number_of_trees
             else:
-                qtd_CPUs = int(cpu_count()-1)
+                qtd_CPUs = int(cpu_count()/3)
             pool = Pool(qtd_CPUs) # number of CPUs
             #paralell processing:
             results = pool.map(STR_tree_parallel, [1] * number_of_trees)
@@ -768,11 +595,17 @@ else:
 
             MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model = timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'adaLASSO + STR RF'
         if title in models_to_train:
@@ -783,7 +616,7 @@ else:
             if number_of_trees < int(cpu_count()-1):
                 qtd_CPUs = number_of_trees
             else:
-                qtd_CPUs = int(cpu_count()-1)
+                qtd_CPUs = int(cpu_count()/3)
             pool = Pool(qtd_CPUs) # number of CPUs
             #paralell processing:
             results = pool.map(STR_tree_parallel, [1] * number_of_trees)
@@ -791,14 +624,19 @@ else:
 
             preds = preds_adalasso + preds.values
             final_preds_adalasso_plus_STR_random_forest = preds.copy() # para graficos
-            # final_MSE = mean_squared_error(y_true=y_test, y_pred=preds) # AQUI ESTAVA ERRADO
             MSE = mean_squared_error(y_true=y_test, y_pred=preds) # AQUI ESTAVA ERRADO
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model = timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'adaLASSO + RF'
         if title in models_to_train:
@@ -809,11 +647,17 @@ else:
             preds = preds_adalasso + preds_RF
             MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model = timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'RF'
         if title in models_to_train:
@@ -823,11 +667,17 @@ else:
             preds = model.predict(X_test)
             MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model=timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'SVR'
         if title in models_to_train:
@@ -837,11 +687,17 @@ else:
             preds = model.predict(X_test)
             MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model=timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'OLS'
         if title in models_to_train:
@@ -851,11 +707,17 @@ else:
             preds = model.predict(X_test)
             MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model=timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         title = 'BooST'
         if title in models_to_train:
@@ -863,18 +725,24 @@ else:
             result_r = boost_f_r(X_train_r, y_train_r, v=0.2, p=2/3, d_max=d_max, gamma=robjects.r.seq(0.5,5,0.01), M=number_of_trees, display=False,stochastic=False,s_prop=0.5, node_obs=n/200, random=False)
             preds_r = predict_boost_f_r(result_r,newx=X_test_r)
             preds = recurse_r_tree(preds_r)
-            MSE = mean_squared_error(y_true=y_test,y_pred=preds)
+            MSE = mean_squared_error(y_true=y_test, y_pred=preds)
             relative_error = ((((preds-y_test)/y_test)**2).sum()/len(y_test))**(1/2)
+            r2 = calculate_r_squared(y_test, preds)
+            n_samples = X_test_new.shape[0]
+            n_features = X_test_new.shape[1]
+            rss = np.sum((y_test - preds) ** 2) # Residual Sum of Squares
+            aic = calculate_aic(n_samples, n_features, rss)
+            bic = calculate_bic(n_samples, n_features, rss)
             end_model=timer()
-            if dataset == 'exemplo b':
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs])
+            if dataset == 'example DGP':
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), sum_lin_coefs, r2, aic, bic,])
             else:
-                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model)])
+                resultados.append([title, MSE, relative_error, timedelta(seconds=end_model-start_model), r2, aic, bic])
 
         # mostra resultados parciais:        
-        if dataset == 'exemplo b':
+        if dataset == 'example DGP':
             print('X.shape:', X.shape)
-            resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'sum lin coefs'])
+            resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'sum lin coefs', 'r2', 'aic', 'bic'])
             resultados_df['run time'] = resultados_df['run time'].apply(lambda x: x.total_seconds()) # run time for each repetition in seconds
             resultados_df = resultados_df.sort_values('MSE')
             resultados_df = resultados_df.groupby(['sum lin coefs', 'modelo']).mean()
@@ -892,16 +760,19 @@ else:
             print('')
             print('\nDATASET:', dataset)
             print('X.shape:', X.shape)
-            resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time'])
+            resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'r2', 'aic', 'bic'])
+            if 'Fan' in dataset:
+                resultados_df = resultados_df.sort_values('MSE')
+                resultados_df = resultados_df.iloc[:int(resultados_df.shape[0]*0.8),:]
             resultados_df['run time'] = resultados_df['run time'].apply(lambda x: x.total_seconds()) # run time for each repetition in seconds
             resultados_df = resultados_df.groupby('modelo').mean()
             # transforma em RMSE, p/ ocupar menos espaco na tabela:
             resultados_df['RMSE'] = resultados_df['MSE']**(1/2)
-            if ( (dataset == 'exemplo a') or (dataset == 'Friedman #1') ):
+            if ( (dataset == 'example DGP') or (dataset == 'Friedman #1') ):
                 resultados_df = resultados_df.sort_values('relative error')
             else:
                 resultados_df = resultados_df.sort_values('MSE')
-            resultados_df = resultados_df[['RMSE', 'relative error', 'run time']]
+            resultados_df = resultados_df[['RMSE', 'relative error', 'run time', 'r2', 'aic', 'bic']]
             print(resultados_df)
             if dataset in datasets_simulados:
                 print('Qtd coefs nao zerados pelo adalasso:')
@@ -952,34 +823,34 @@ if number_of_trees_analysis:
     ax.set_xlabel('Number of trees', fontsize=12)
     ax.set_ylabel('log (MSE)', fontsize=12)
 
-elif dataset in datasets_simulados:
+elif ( (dataset == 'example DGP') or (dataset == 'Friedman #1') ):
 
-    if dataset == 'exemplo b':
-        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'sum lin coefs'])
+    if dataset == 'example DGP':
+        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'sum lin coefs', 'r2', 'aic', 'bic'])
     else:
-        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time'])
-
+        resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'r2', 'aic', 'bic'])
+    
     resultados_df['run time'] = resultados_df['run time'].apply(lambda x: x.total_seconds()) # run time for each repetition in seconds
 
-    if dataset == 'exemplo b':
+    resultados_df['RMSE'] = resultados_df['MSE']**(1/2)
+
+    if dataset == 'example DGP':
         print('Quantas vezes cada sum lin coefs rodou:', resultados_df.groupby(['sum lin coefs']).count() / len(np.unique(resultados_df['modelo'])))
         print('Total runs:', (resultados_df.groupby(['sum lin coefs']).count() / len(np.unique(resultados_df['modelo']))).sum())
 
     run_time =  resultados_df.groupby('modelo').mean()
-    # print('Run time:', run_time)
     print('BooST is', run_time.loc['BooST', 'run time'] / run_time.loc['adaLASSO + STR RF', 'run time'], 'times slower than adalasso + STR RF')
 
-    resultados_df = resultados_df.sort_values('MSE')
-    if dataset == 'exemplo b':
+    resultados_df = resultados_df.sort_values('RMSE')
+    if dataset == 'example DGP':
         resultados_df = resultados_df.groupby(['sum lin coefs', 'modelo']).mean()
         resultados_df = resultados_df[['relative error']]
     else:
         resultados_df = resultados_df.groupby('modelo').mean()
 
-    resultados_df = resultados_df.sort_values('relative error')
-
     # https://stackoverflow.com/questions/52566616/transposing-selected-multiindex-levels-in-pandas-dataframe
-    if dataset == 'exemplo b':
+
+    if dataset == 'example DGP':
         resultados_df = resultados_df.stack().unstack(level=1)
         resultados_df = resultados_df.sort_index()
         resultados_df = resultados_df.droplevel(1)
@@ -995,7 +866,7 @@ elif dataset in datasets_simulados:
     print('Tempo total para análise:', timedelta(seconds=end-start))
 
     # formatacao para a dissertacao:
-    if dataset != 'exemplo b':
+    if dataset != 'example DGP':
         resultados_to_print = resultados_df[['relative error']].T
     else:
         resultados_to_print = resultados_df
@@ -1003,25 +874,39 @@ elif dataset in datasets_simulados:
     resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
     print(resultados_to_print.round(4).to_latex())
 
-
 else:
 
-    resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time'])
+    resultados_df = pd.DataFrame(resultados, columns=['modelo', 'MSE', 'relative error', 'run time', 'r2', 'aic', 'bic'])
 
     resultados_df['run time'] = resultados_df['run time'].apply(lambda x: x.total_seconds()) # run time for each repetition in seconds
 
-    resultados_df = resultados_df.groupby('modelo').mean()
     # transforma em RMSE, p/ ocupar menos espaco na tabela:
     resultados_df['RMSE'] = resultados_df['MSE']**(1/2)
-    resultados_df = resultados_df.sort_values('MSE')
 
-    resultados_df = resultados_df[['RMSE', 'relative error', 'run time']]
+    std = resultados_df.groupby('modelo')['RMSE'].std()
+
+    resultados_df = resultados_df.groupby('modelo').mean()
+    resultados_df['std'] = std
+
+    resultados_df = resultados_df.sort_values('RMSE')
+
+    # reorder columns:
+    resultados_df = resultados_df[['RMSE', 'relative error', 'run time', 'std', 'r2', 'aic', 'bic']]
 
     print('ordenado por RMSE:')
     print(resultados_df)
     print('')
     print('ordenado por relative error:')
     print(resultados_df.sort_values('relative error'))
+    print('')
+    print('ordenado por r2:')
+    print(resultados_df.sort_values('r2', ascending=False))
+    print('')
+    print('ordenado por aic:')
+    print(resultados_df.sort_values('aic'))
+    print('')
+    print('ordenado por bic:')
+    print(resultados_df.sort_values('bic'))
 
     end = timer()
     print('Tempo total para análise:', timedelta(seconds=end-start))
@@ -1034,16 +919,33 @@ else:
     else:
         print(resultados_to_print.round(4).to_latex())
 
-# grava resultados:
-data_path = '/home/alega/dissertacao/results/'
-if number_of_trees_analysis:
-    with open(data_path + 'qty_of_trees_novo_ex_b_coefs_1_2_3' + '.pkl', 'wb') as handle:
-        pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    resultados_df.to_csv(data_path + 'qty_of_trees_novo_ex_b_coefs_1_2_3' + '.csv')
-else:
-    with open(data_path + dataset + '.pkl', 'wb') as handle:
-        pickle.dump(resultados, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    resultados_df.to_csv(data_path + dataset + '.csv')
+    resultados_to_print = resultados_df[['std']].T
+    resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
+    if dataset == 'ailerons':
+        print(resultados_to_print.round(6).to_latex())
+    else:
+        print(resultados_to_print.round(4).to_latex())
+
+    resultados_to_print = resultados_df[['r2']].T
+    resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
+    if dataset == 'ailerons':
+        print(resultados_to_print.round(6).to_latex())
+    else:
+        print(resultados_to_print.round(4).to_latex())
+
+    resultados_to_print = resultados_df[['aic']].T
+    resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
+    if dataset == 'ailerons':
+        print(resultados_to_print.round(6).to_latex())
+    else:
+        print(resultados_to_print.round(2).to_latex())
+
+    resultados_to_print = resultados_df[['bic']].T
+    resultados_to_print = resultados_to_print[['OLS', 'adaLASSO', 'SVR', 'RF', 'STR RF', 'BooST', 'adaLASSO + RF', 'adaLASSO + STR RF']] # reordena as colunas.
+    if dataset == 'ailerons':
+        print(resultados_to_print.round(6).to_latex())
+    else:
+        print(resultados_to_print.round(2).to_latex())
 
 ##############
 # FIM DAS SIMULACOES

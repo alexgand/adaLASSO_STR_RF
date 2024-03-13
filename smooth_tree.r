@@ -1,7 +1,6 @@
 # R code partially modified from the BooST repositorie: https://github.com/gabrielrvsc/BooST
 
 grow_tree=function(x, y, p, d_max, gamma, node_obs){
-#  set.seed(0)
   bf=0
 
   N=length(y)
@@ -10,7 +9,6 @@ grow_tree=function(x, y, p, d_max, gamma, node_obs){
   tree = t0$tree
   Pmat = t0$Pmat
 
-  ################
   iter=1
   while(iter<=d_max){
     titer=grow(x,y,p,N,gamma,node_obs,tree,Pmat,d_max,iter,bf)
@@ -26,16 +24,12 @@ grow_tree=function(x, y, p, d_max, gamma, node_obs){
 }
 
 grow0 = function(x,y,p,N,gamma,node_obs){
-#  set.seed(0)
-  variables = sample(ncol(x), round(p*ncol(x)))#sort(sample(1:ncol(x), max(round(p*ncol(x)),2)  ))
+  variables = sample(ncol(x), round(p*ncol(x)))
   gammai=gamma[sample(1:length(gamma),1)]
   fit=list()
   for(i in 1:length(variables)){
     xtest=x[,variables[i]]
-    #xtest=stats::runif(20,min(xtest)-0.1*stats::sd(xtest),max(xtest)+0.1*stats::sd(xtest))
     xtest=sample(xtest,min(20,N))
-
-    #gammascale=max(stats::IQR(x[,variables[i]]),0.5)
     gammascale=max(stats::sd(x[,variables[i]]),0.1)
     ssr=sapply(xtest,initial_node_var_test,x=x[,variables[i]],y=y,gamma=gammai/gammascale,node_obs=node_obs)
     ssr=t(ssr)
@@ -45,7 +39,7 @@ grow0 = function(x,y,p,N,gamma,node_obs){
     fit[[i]]=res0
 
   }
-  best=which.min(lapply(fit,function(x)x["val"])) # ACHA O MENOR P-VALUE?
+  best=which.min(lapply(fit,function(x)x["val"]))
   node=fit[[best]]
 
   nodeleft=data.frame("side" = 1,"b" = node["b0"],"c0" = node["c0"],gamma = node["gamma"]
@@ -61,10 +55,9 @@ grow0 = function(x,y,p,N,gamma,node_obs){
 }
 
 grow = function(x,y,p,N,gamma,node_obs,tree,Pmat,d_max,iter,bf){
-#  set.seed(0)
   gammai=gamma[sample(1:length(gamma),1)]
   terminal=which(tree$terminal=="yes")
-  variables=sample(ncol(x), round(p*ncol(x)))#sort(sample(1:ncol(x), max(round(p*ncol(x)),2)))
+  variables=sample(ncol(x), round(p*ncol(x)))
   test=expand.grid(variables,terminal)
   colnames(test)=c("variable","terminal")
 
@@ -108,7 +101,6 @@ grow = function(x,y,p,N,gamma,node_obs,tree,Pmat,d_max,iter,bf){
                        , "parent" = tree$id[test$terminal[best]], "terminal" = "yes", variable = test[best,"variable"],id=nrow(tree)+2,
                        deep=tree$deep[test$terminal[best]]+1)
 
-
   tree$terminal[test$terminal[best]]="no"
 
   tree=rbind(tree,nodeleft,noderight)
@@ -122,7 +114,6 @@ grow = function(x,y,p,N,gamma,node_obs,tree,Pmat,d_max,iter,bf){
   return(list(tree = tree, Pmat = Pmat, iter = iter, bf = bf))
 }
 
-
 initial_node_var_test=function(c0,x,y,gamma,node_obs){
 #  set.seed(0)
   logit=1/(1+exp(-gamma*(x-c0)))
@@ -133,7 +124,7 @@ initial_node_var_test=function(c0,x,y,gamma,node_obs){
   if(l0<node_obs | l1<node_obs){
     return(c(Inf,rep(NA,ncol(X))))
   }
-  b=tryCatch(stats::coef(stats::.lm.fit(X,y)),error=function(e)Inf) #regressao normal, retorna os coeficientes
+  b=tryCatch(stats::coef(stats::.lm.fit(X,y)),error=function(e)Inf) # regressao normal, retorna os coeficientes
   if(is.infinite(b[1])){
     return(c(b[1],rep(NA,ncol(X))))
   }
@@ -141,12 +132,9 @@ initial_node_var_test=function(c0,x,y,gamma,node_obs){
 }
 
 node_var_test=function(c0,x,y,gamma,Pmat,terminal,middlenodes,deep,node_obs){
-#  set.seed(0)
   logit=1/(1+exp(-gamma*(x-c0)))
   b0=logit*Pmat[,terminal]
   b1=(1-logit)*Pmat[,terminal]
-  # b0=(1/(1+exp(-gamma*(x-c0))))*Pmat[,terminal]
-  # b1=(1-b0)*Pmat[,terminal]
   X=cbind(b0,b1,Pmat[,-c(terminal,middlenodes)])
   l0=length(which(b0>=0.5^deep))
   l1=length(which(b1>=0.5^deep))
@@ -161,7 +149,6 @@ node_var_test=function(c0,x,y,gamma,Pmat,terminal,middlenodes,deep,node_obs){
   c(e,b)
 }
 
-#predict.SmoothTree=function(object,newx=NULL,...){
 predict.SmoothTree=function(object,newx,...){
 #  set.seed(0)
   if(is.null(newx)){
@@ -178,7 +165,6 @@ predict.SmoothTree=function(object,newx,...){
 }
 
 smooth_tree=function(x, y, p = 1, d_max = 4, gamma = seq(0.5,5,0.01),node_obs=nrow(x)/200, random = FALSE){
-#  set.seed(0)
   if(random==TRUE){
     grow_tree = grow_tree_random
   }
@@ -212,11 +198,9 @@ eval_tree=function(x,tree){
   return(fitted)
 }
 
-
 BooST = function(x, y, v=0.2, p = 2/3, d_max = 4, gamma = seq(0.5,5,0.01),
                  M = 300, display=FALSE,
                  stochastic=FALSE,s_prop=0.5, node_obs=nrow(x)/200, random = FALSE) {
-#  set.seed(0)
 
   params = list(v=v,p=p,d_max=d_max,gamma=gamma,M=M,stochastic=stochastic,
                 s_prop=s_prop,node_obs=node_obs, random = random)
@@ -272,16 +256,6 @@ BooST = function(x, y, v=0.2, p = 2/3, d_max = 4, gamma = seq(0.5,5,0.01),
       phitest=phi+v*rho*fitstep
       savetree[[i]]=step
       brmse[i]=sqrt(mean((y-phitest)^2))
-
-      # if(i>1){
-      #   if(brmse[i]>brmse[i-1]){
-      #     rho=0
-      #     phitest=phi+v*rho*fitstep
-      #     savetree[[i]]=step
-      #     brmse[i]=sqrt(mean((y-phitest)^2))
-      #     cat("stag")
-      #   }
-      # }
       phi=phitest
       save_rho[i]=rho
       if(display==TRUE){
